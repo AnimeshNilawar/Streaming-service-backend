@@ -28,7 +28,7 @@ func main() {
 	r.GET("/stream/:videoID", streaming.GetVideoURL)
 
 	// Start Server
-	port := "8080"
+	port := os.Getenv("PORT")
 	fmt.Printf("Server running on port %s\n", port)
 	err = r.Run(":" + port)
 	if err != nil {
