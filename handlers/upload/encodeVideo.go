@@ -59,9 +59,9 @@ func EncodeVideo(inputPath, videoID string) {
 		"-seg_duration", "10",
 		"-use_timeline", "1",
 		"-use_template", "1",
-		"-init_seg_name", filepath.Join(dashOutput, "init-stream$RepresentationID$.m4s"), // Define init segment path
-		"-media_seg_name", filepath.Join(dashOutput, "chunk-stream$RepresentationID$-$Number$.m4s"), // Define segment names
-		filepath.Join(dashOutput, "manifest.mpd"), // DASH Manifest file
+		"-init_seg_name", "init-stream$RepresentationID$.m4s",
+		"-media_seg_name", "chunk-stream$RepresentationID$-$Number$.m4s",
+		filepath.ToSlash(filepath.Join(dashOutput, "manifest.mpd")), // DASH Manifest file
 	)
 
 	// Capture output for debugging	hlsCmd.Stderr = os.Stderr

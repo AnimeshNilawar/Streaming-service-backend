@@ -41,7 +41,7 @@ func UploadToGCS(folderPath, videoID, format string) error {
 
 		// upload to GCS
 		wc := client.Bucket(bucketName).Object(objectPath).NewWriter(ctx)
-		wc.ContentType = "video/mp4"
+		wc.ContentType = getContentType(objectPath)
 		if _, err := io.Copy(wc, file); err != nil {
 			return err
 		}
@@ -54,4 +54,21 @@ func UploadToGCS(folderPath, videoID, format string) error {
 	os.RemoveAll(folderPath)
 
 	return err
+}
+
+func getContentType(filename string) string {
+	switch filepath.Ext(filename) {
+	case ".mp4":
+		return "video/mp4"
+	case ".m3u8":
+		return "application/x-mpegURL" // Correct MIME type for HLS
+	case ".mpd":
+		return "application/dash+xml" // Correct MIME type for DASH
+	case ".ts":
+		return "video/mp2t" // HLS Transport Stream segments
+	case ".m4s":
+		return "video/iso.segment" // DASH Media Segments
+	default:
+		return "application/octet-stream" // Default if unknown
+	}
 }
