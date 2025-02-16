@@ -54,7 +54,7 @@ func UploadVideo(c *gin.Context) {
 	go EncodeVideo(localFilePath, videoID)
 
 	// Respond with immediate playback URL (low quality)
-	lowQualityURL := fmt.Sprintf("https://storage.googleapis.com/%s/videos/%s/360p.mp4", bucketName, videoID)
+	lowQualityURL := fmt.Sprintf("https://storage.googleapis.com/%s/video/%s/360p.mp4", bucketName, videoID)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":          "File uploaded successfully",

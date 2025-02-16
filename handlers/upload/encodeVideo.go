@@ -4,41 +4,94 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"time"
+	"path/filepath"
 )
 
 // Encode video into different qualities using FFmpeg
 func EncodeVideo(inputPath, videoID string) {
-	output360p := fmt.Sprintf("%s/%s_360p.mp4", localStorage, videoID)
-	output720p := fmt.Sprintf("%s/%s_720p.mp4", localStorage, videoID)
-	output1080p := fmt.Sprintf("%s/%s_1080p.mp4", localStorage, videoID)
+	// Convert to absolute path
+	absInputPath, err := filepath.Abs(inputPath)
+	if err != nil {
+		fmt.Printf("Error getting absolute path: %v\n", err)
+		return
+	}
+	inputPath = filepath.ToSlash(absInputPath)
 
-	// FFmpeg commands
-	commands := [][]string{
-		{"-i", inputPath, "-vf", "scale=640:360", "-c:v", "libx264", "-preset", "slow", "-crf", "23", "-c:a", "aac", "-b:a", "128k", output360p},
-		{"-i", inputPath, "-vf", "scale=1280:720", "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-c:a", "aac", "-b:a", "192k", output720p},
-		{"-i", inputPath, "-vf", "scale=1920:1080", "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-c:a", "aac", "-b:a", "256k", output1080p},
-	}	
+	hlsOutput := filepath.ToSlash(filepath.Join(localStorage, videoID+"_hls"))
+	dashOutput := filepath.ToSlash(filepath.Join(localStorage, videoID+"_dash"))
 
-	// Run encoding commands
-	for _, cmdArgs := range commands {
-		cmd := exec.Command("ffmpeg", cmdArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
-		if err != nil {
-			fmt.Printf("FFmpeg failed: %v\n", err)
-		}
+	if _, err := os.Stat(inputPath); os.IsNotExist(err) {
+		fmt.Printf("Error: Input file does not exist: %s\n", inputPath)
+		return
 	}
 
-	time.Sleep(1 * time.Second)
+	fmt.Println("HLS Output Path:", hlsOutput)
+	fmt.Println("DASH Output Path:", dashOutput)
 
-	// Delete the original file after encoding and uploading
-	os.Remove(inputPath)
-	fmt.Println("Original file deleted: ", inputPath)
+	// Create Output Directories
+	os.MkdirAll(hlsOutput, os.ModePerm)
+	os.MkdirAll(dashOutput, os.ModePerm)
 
-	// Upload encoded videos to GCS
-	UploadToGCS(output360p, videoID, "360p", "HLS")
-	UploadToGCS(output720p, videoID, "720p", "HLS")
-	UploadToGCS(output1080p, videoID, "1080p", "HLS")
+	// FFmpeg command for HLS
+	hlsCmd := exec.Command("ffmpeg",
+		"-i", inputPath,
+		"-preset", "fast", "-g", "48", "-sc_threshold", "0",
+		"-map", "0:v:0", "-map", "0:a:0",
+		"-c:v", "libx264", "-crf", "23", "-profile:v", "main", "-c:a", "aac", "-ar", "48000", "-b:a", "128k",
+		"-b:v:0", "800k", "-s:v:0", "640x360",
+		"-hls_time", "10", "-hls_playlist_type", "vod",
+		"-hls_flags", "independent_segments",
+		"-hls_segment_filename", filepath.Join(hlsOutput, "segment_%03d.ts"),
+		filepath.Join(hlsOutput, "playlist.m3u8"),
+	)
+
+	// FFmpeg command for DASH
+	dashCmd := exec.Command("ffmpeg",
+		"-i", inputPath,
+		"-preset", "fast", "-g", "48", "-sc_threshold", "0",
+		"-map", "0:v:0", "-map", "0:a:0",
+		"-c:v", "libx264", "-crf", "23", "-profile:v", "main", "-c:a", "aac", "-ar", "48000", "-b:a", "128k",
+		"-b:v:0", "800k", "-s:v:0", "640x360",
+		"-b:v:1", "1400k", "-s:v:1", "1280x720",
+		"-b:v:2", "2800k", "-s:v:2", "1920x1080",
+		"-f", "dash",
+		"-adaptation_sets", "id=0,streams=v id=1,streams=a",
+		"-seg_duration", "10",
+		"-use_timeline", "1",
+		"-use_template", "1",
+		"-init_seg_name", filepath.Join(dashOutput, "init-stream$RepresentationID$.m4s"), // Define init segment path
+		"-media_seg_name", filepath.Join(dashOutput, "chunk-stream$RepresentationID$-$Number$.m4s"), // Define segment names
+		filepath.Join(dashOutput, "manifest.mpd"), // DASH Manifest file
+	)
+
+	// Capture output for debugging	hlsCmd.Stderr = os.Stderr
+	hlsCmd.Stdout = os.Stdout
+	dashCmd.Stderr = os.Stderr
+	dashCmd.Stdout = os.Stdout
+
+	// Run FFmpeg process
+	fmt.Println("Executing HLS Command:", hlsCmd.String())
+	if err := hlsCmd.Run(); err != nil {
+		fmt.Printf("HLS encoding failed: %v\n", err)
+		return
+	}
+
+	fmt.Println("Executing DASH Command:", dashCmd.String())
+	if err := dashCmd.Run(); err != nil {
+		fmt.Printf("DASH encoding failed: %v\n", err)
+		return
+	}
+
+	fmt.Println("Encoding completed for HLS & DASH")
+
+	// Upload HLS & DASH segment to GCS
+	UploadToGCS(hlsOutput, videoID, "HLS")
+	UploadToGCS(dashOutput, videoID, "DASH")
+
+	// Delete original file
+	if err := os.Remove(inputPath); err != nil {
+		fmt.Printf("Warning: failed to delete local file %s: %v\n", inputPath, err)
+	} else {
+		fmt.Printf("Deleted local file: %s\n", inputPath)
+	}
 }
