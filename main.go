@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
+
 	"packetized-media-streaming/handlers"
 	"packetized-media-streaming/handlers/streaming"
 	"packetized-media-streaming/handlers/upload"
@@ -11,40 +14,51 @@ import (
 )
 
 func main() {
+	// Initialize Database
 	handlers.InitDB()
-	defer handlers.CloudSQLDB.Close()
 
-	fmt.Println("Database connection established")
+	// Ensure proper cleanup on shutdown
+	defer func() {
+		if handlers.CloudSQLDB != nil {
+			handlers.CloudSQLDB.Close()
+			fmt.Println("Database connection closed")
+		}
+	}()
 
-	err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-	if err != nil {
-		fmt.Printf("Failed to set environment variable %s\n", err)
+	// Ensure GOOGLE_APPLICATION_CREDENTIALS is set (Optional)
+	credentials := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+	if credentials == "" {
+		fmt.Println("Warning: GOOGLE_APPLICATION_CREDENTIALS is not set")
 	}
 
+	// Setup Gin router
 	r := gin.Default()
 
 	// Routes
 	r.POST("/upload", upload.UploadVideo)
 	r.GET("/stream/:videoID", streaming.GetVideoURL)
 
-	// Start Server
+	// Get PORT from environment variable
 	port := os.Getenv("PORT")
-	fmt.Printf("Server running on port %s\n", port)
-	err = r.Run(":" + port)
-	if err != nil {
-		fmt.Println("Failed to start server")
+	if port == "" {
+		port = "8080" // Default port
 	}
+
+	// Start Server with graceful shutdown handling
+	go func() {
+		fmt.Printf("Server running on port %s\n", port)
+		if err := r.Run(":" + port); err != nil {
+			fmt.Printf("Failed to start server: %v\n", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("\nShutting down server...")
+	handlers.CloudSQLDB.Close()
+	fmt.Println("Server shut down gracefully")
 }
-
-// func getVideoURL(c *gin.Context) {
-// 	videoID := c.Param("id")
-
-// 	var videoURL string
-// 	err := handlers.CloudSQLDB.QueryRow("SELECT url FROM videos WHERE id = ?", videoID).Scan(&videoURL)
-// 	if err != nil {
-// 		c.JSON(404, gin.H{"error": "Video not found"})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"video_url": videoURL})
-// }
