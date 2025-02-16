@@ -44,7 +44,7 @@ func UploadVideo(c *gin.Context) {
 	}
 
 	// Insert video details into database
-	_, err = handlers.CloudSQLDB.Exec(`INSERT INTO videos (filename, path, duration) VALUES (?, ?, ?)`, newFileName,localFilePath, duration)
+	_, err = handlers.CloudSQLDB.Exec(`INSERT INTO videos (filename, path, duration) VALUES (?, ?, ?)`, newFileName, localFilePath, duration)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save metadata"})
 		return
@@ -53,12 +53,11 @@ func UploadVideo(c *gin.Context) {
 	// Start encoding in the background
 	go EncodeVideo(localFilePath, videoID)
 
-	// Respond with immediate playback URL (low quality)
-	lowQualityURL := fmt.Sprintf("https://storage.googleapis.com/%s/video/%s/360p.mp4", bucketName, videoID)
+	videoURL := fmt.Sprintf("https://storage.googleapis.com/packetized-media-bucket/videos/%s/DASH/manifest.mpd", videoID)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":          "File uploaded successfully",
-		"video_id":         videoID,
-		"instant_play_url": lowQualityURL,
+		"message":   "File uploaded successfully",
+		"video_id":  videoID,
+		"video_url": videoURL,
 	})
 }

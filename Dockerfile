@@ -1,5 +1,5 @@
 # Use an official Golang image
-FROM golang:1.24
+FROM golang:1.22
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
