@@ -36,19 +36,13 @@ func EncodeVideo(inputPath, videoID string) {
 	hlsCmd := exec.Command("ffmpeg",
 		"-i", inputPath,
 		"-preset", "fast", "-g", "48", "-sc_threshold", "0",
-		"-r", "30", "-vsync", "cfr",
-		"-map", "0:v:0", "-map", "0:v:0", "-map", "0:v:0", "-map", "0:a:0",
+		"-map", "0:v:0", "-map", "0:a:0",
 		"-c:v", "libx264", "-crf", "23", "-profile:v", "main", "-c:a", "aac", "-ar", "48000", "-b:a", "128k",
 		"-b:v:0", "800k", "-s:v:0", "640x360",
-		"-b:v:1", "1400k", "-s:v:1", "1280x720",
-		"-b:v:2", "2800k", "-s:v:2", "1920x1080",
-		"-f", "hls",
-		"-hls_time", "10", // 10 second segment duration
-		"-hls_playlist_type", "vod",
-		"-hls_segment_filename", filepath.ToSlash(filepath.Join(hlsOutput, "chunk-stream%v-%d.ts")),
-		"-master_pl_name", "master.m3u8",
-		"-var_stream_map", `"v:0,a:0 v:1,a:0 v:2,a:0"`,
-		filepath.ToSlash(filepath.Join(hlsOutput, "playlist.m3u8")),
+		"-hls_time", "10", "-hls_playlist_type", "vod",
+		"-hls_flags", "independent_segments",
+		"-hls_segment_filename", filepath.Join(hlsOutput, "segment_%03d.ts"),
+		filepath.Join(hlsOutput, "playlist.m3u8"),
 	)
 
 	// FFmpeg command for DASH
