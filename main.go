@@ -34,6 +34,8 @@ func main() {
 	// Setup Gin router
 	r := gin.Default()
 
+	r.MaxMultipartMemory = 2 << 30 // 500 MB limit  
+
 	// Routes
 	r.POST("/upload", upload.UploadVideo)
 	r.GET("/stream/:videoID", streaming.GetVideoURL)

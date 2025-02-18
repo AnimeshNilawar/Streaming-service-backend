@@ -2,7 +2,9 @@ package upload
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"packetized-media-streaming/handlers"
 	"path/filepath"
 
@@ -14,24 +16,55 @@ const (
 	bucketName      = "packetized-media-bucket"
 	credentialsFile = "service-account.json"
 	localStorage    = "./videos"
+	maxFileSize     = 2 * 1024 * 1024 * 1024 // 2GB in bytes
 )
 
 // Upload video endpoint
 func UploadVideo(c *gin.Context) {
-	file, err := c.FormFile("file")
+	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
 		return
 	}
 
+	// Check file size (avoid exceeding 2GB)
+	if fileHeader.Size > maxFileSize {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "File size exceeds 2GB limit"})
+		return
+	}
+
 	// Generate a unique filename
-	fileExt := filepath.Ext(file.Filename)
+	fileExt := filepath.Ext(fileHeader.Filename)
 	videoID := uuid.New().String()
 	newFileName := videoID + fileExt
 	localFilePath := filepath.Join(localStorage, newFileName)
 
-	// Save file locally
-	if err := c.SaveUploadedFile(file, localFilePath); err != nil {
+	// Ensure storage directory exists
+	if _, err := os.Stat(localStorage); os.IsNotExist(err) {
+		if err := os.MkdirAll(localStorage, os.ModePerm); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create storage directory"})
+			return
+		}
+	}
+
+	// Open file stream
+	src, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open uploaded file"})
+		return
+	}
+	defer src.Close()
+
+	// Create destination file
+	dst, err := os.Create(localFilePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create file on disk"})
+		return
+	}
+	defer dst.Close()
+
+	// Stream copy file (efficient for large files)
+	if _, err := io.Copy(dst, src); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
 		return
 	}
