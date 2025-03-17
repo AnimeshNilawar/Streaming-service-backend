@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"packetized-media-streaming/handlers"
+	// "packetized-media-streaming/handlers"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
@@ -70,18 +70,18 @@ func UploadVideo(c *gin.Context) {
 	}
 
 	// Get Duration of video
-	duration, err := GetVideoDuration(localFilePath)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get video duration"})
-		return
-	}
+	// duration, err := GetVideoDuration(localFilePath)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get video duration"})
+	// 	return
+	// }
 
-	// Insert video details into database
-	_, err = handlers.CloudSQLDB.Exec(`INSERT INTO videos (filename, path, duration) VALUES (?, ?, ?)`, newFileName, localFilePath, duration)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save metadata"})
-		return
-	}
+	// // Insert video details into database
+	// _, err = handlers.CloudSQLDB.Exec(`INSERT INTO videos (filename, path, duration) VALUES (?, ?, ?)`, newFileName, localFilePath, duration)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save metadata"})
+	// 	return
+	// }
 
 	// Start encoding in the background
 	go EncodeVideo(localFilePath, videoID)
