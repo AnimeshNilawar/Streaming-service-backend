@@ -1,11 +1,106 @@
 package upload
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
+
+	"cloud.google.com/go/storage"
+	"google.golang.org/api/option"
 )
+
+func processVideoFromGCS(videoId, BucketName, fileName string) {
+	// Construct the GCS object path
+	objectPath := fmt.Sprintf("videos/%s/%s", videoId, fileName)
+
+	// Initialize GCS Client
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx, option.WithCredentialsFile(credentialsFile))
+	if err != nil {
+		fmt.Printf("Failed to create GCS client: %v\n", err)
+		return
+	}
+	defer client.Close()
+
+	// Check if the object exists
+	obj := client.Bucket(bucketName).Object(objectPath)
+	// Retry loop to check if the file exists every 10 seconds
+	maxRetries := 5
+	retries := 0
+	var objAttrs *storage.ObjectAttrs
+	for retries < maxRetries {
+		// Check if the object exists
+		obj := client.Bucket(bucketName).Object(objectPath)
+		objAttrs, err = obj.Attrs(ctx)
+		if err != nil {
+			if err == storage.ErrObjectNotExist {
+				// If the object does not exist, retry after 10 seconds
+				fmt.Printf("Object %s does not exist in bucket %s. Retrying in 10 seconds...\n", objectPath, bucketName)
+			} else {
+				// Handle other errors, such as network issues
+				fmt.Printf("Error retrieving object attributes: %v\n", err)
+				return
+			}
+		} else {
+			// Object exists, log its attributes and break the retry loop
+			fmt.Printf("Object %s found in bucket %s\n", objectPath, bucketName)
+			fmt.Printf("Object attributes: Name=%s, Size=%d, ContentType=%s\n", objAttrs.Name, objAttrs.Size, objAttrs.ContentType)
+			break
+		}
+
+		// Increment retry counter and wait for 10 seconds before retrying
+		retries++
+		time.Sleep(10 * time.Second)
+	}
+
+	if retries == maxRetries {
+		// If we reached the max retries, exit the function
+		fmt.Printf("Exceeded maximum retries (%d). Aborting...\n", maxRetries)
+		return
+	}
+
+	// Download the file from GCS
+	rc, err := obj.NewReader(ctx)
+	if err != nil {
+		fmt.Printf("Failed to read file from GCS: %v\n", err)
+		return
+	}
+	defer rc.Close()
+
+	// Create a "videos" directory if it doesn't exist
+	videoDir := filepath.Join("videos", videoId)
+	if err := os.MkdirAll(videoDir, os.ModePerm); err != nil {
+		fmt.Printf("Failed to create video directory: %v\n", err)
+		return
+	}
+
+	// Save the video to the newly created folder
+	tempFilePath := filepath.Join(videoDir, fileName)
+	tempFile, err := os.Create(tempFilePath)
+	if err != nil {
+		fmt.Printf("Failed to create temp file: %v\n", err)
+		return
+	}
+	defer tempFile.Close()
+
+	// Copy the video content from GCS to the temp file
+	if _, err := io.Copy(tempFile, rc); err != nil {
+		fmt.Printf("Failed to copy video from GCS to temp file: %v\n", err)
+		return
+	}
+
+	// Process the video (encoding, etc.) using FFmpeg
+	EncodeVideo(tempFilePath, videoId)
+
+	// Delete the temporary file
+	if err := os.Remove(tempFilePath); err != nil {
+		fmt.Printf("Failed to delete temp file: %v\n", err)
+	}
+}
 
 // Encode video into different qualities using FFmpeg
 func EncodeVideo(inputPath, videoID string) {
